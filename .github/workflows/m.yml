@@ -2,6 +2,14 @@ name: Manual HK Finance News Crawler
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "briefing = 整理简报推送；crawl = 原始爬虫列表"
+        type: choice
+        options:
+          - briefing
+          - crawl
+        default: briefing
 
 jobs:
   crawl-hk-news:
@@ -13,17 +21,27 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Push curated HK finance briefing
+        if: ${{ github.event.inputs.mode != 'crawl' }}
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+          python .github/hk_finance/pushplus_send.py .github/hk_finance/briefing.html \
+            --title "章鱼AI｜港股财经 8月12日"
+
+      - name: Install crawl dependencies
+        if: ${{ github.event.inputs.mode == 'crawl' }}
         run: |
           python -m pip install --upgrade pip
           pip install crawl4ai playwright beautifulsoup4 requests
-
-      - name: Install Playwright browsers
-        run: playwright install chromium
+          playwright install chromium
 
       - name: Run HK Finance News Crawler (100 latest items) + PushPlus
+        if: ${{ github.event.inputs.mode == 'crawl' }}
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
