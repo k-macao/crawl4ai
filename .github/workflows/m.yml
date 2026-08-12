@@ -1,0 +1,62 @@
+name: Manual HK Finance News Crawler
+
+on:
+  workflow_dispatch:
+
+jobs:
+  crawl-hk-news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install crawl4ai playwright beautifulsoup4 requests
+
+      - name: Install Playwright browsers
+        run: playwright install chromium
+
+      - name: Run HK Finance News Crawler (100 latest items) + PushPlus
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          python -c "
+import asyncio
+import json
+import os
+import requests
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+
+async def crawl_hk_finance():
+    config = CrawlerRunConfig(
+        extraction_strategy=JsonCssExtractionStrategy(
+            schema={
+                'baseSelector': 'article, .news-item, .story',
+                'fields': [
+                    {'name': 'title', 'selector': 'h1, h2, h3, .title', 'type': 'text'},
+                    {'name': 'link', 'selector': 'a', 'type': 'attribute', 'attribute': 'href'},
+                    {'name': 'summary', 'selector': 'p, .summary', 'type': 'text'},
+                    {'name': 'date', 'selector': 'time, .date, .time', 'type': 'text'}
+                ]
+            }
+        ),
+        word_count_threshold=10,
+        exclude_external_links=True
+    )
+    
+    urls = [
+        'https://hk.finance.yahoo.com/',
+        'https://news.mingpao.com/ins/%E8%B2%A1%E7%B6%93',
+        'https://hk.on.cc/hk/bkn/cnt/finance/'
+    ]
+    
+    results = []
+    async with AsyncWebCrawler() 
