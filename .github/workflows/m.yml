@@ -26,4 +26,77 @@ jobs:
       - name: Run HK Finance News Crawler (100 latest items) + PushPlus
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-        run: python hk_finance_crawler.py
+        run: |
+          python -c "
+import asyncio
+import json
+import os
+import requests
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+
+async def crawl_hk_finance():
+    config = CrawlerRunConfig(
+        extraction_strategy=JsonCssExtractionStrategy(
+            schema={
+                'baseSelector': 'article, .news-item, .story',
+                'fields': [
+                    {'name': 'title', 'selector': 'h1, h2, h3, .title', 'type': 'text'},
+                    {'name': 'link', 'selector': 'a', 'type': 'attribute', 'attribute': 'href'},
+                    {'name': 'summary', 'selector': 'p, .summary', 'type': 'text'},
+                    {'name': 'date', 'selector': 'time, .date, .time', 'type': 'text'}
+                ]
+            }
+        ),
+        word_count_threshold=10,
+        exclude_external_links=True
+    )
+    
+    urls = [
+        'https://hk.finance.yahoo.com/',
+        'https://news.mingpao.com/ins/%E8%B2%A1%E7%B6%93',
+        'https://hk.on.cc/hk/bkn/cnt/finance/'
+    ]
+    
+    results = []
+    async with AsyncWebCrawler() as crawler:
+        for url in urls:
+            try:
+                result = await crawler.arun(url=url, config=config)
+                if result.extracted_content:
+                    data = json.loads(result.extracted_content)
+                    results.extend(data[:40])
+            except Exception as e:
+                print(f'Error crawling {url}: {e}')
+    
+    seen = set()
+    unique = []
+    for item in sorted(results, key=lambda x: x.get('date', ''), reverse=True):
+        if item.get('title') and item['title'] not in seen:
+            seen.add(item['title'])
+            unique.append(item)
+            if len(unique) >= 100:
+                break
+    
+    print(json.dumps(unique, ensure_ascii=False, indent=2))
+    print(f'\n✅ Total unique HK finance news items: {len(unique)}')
+    
+    token = os.environ.get('PUSHPLUS_TOKEN')
+    if token and unique:
+        html_content = '<h3>香港财经最新新闻（前100条）</h3><ol>'
+        for item in unique:
+            title = item.get('title', '无标题')
+            link = item.get('link', '#')
+            html_content += f'<li><a href=\"{link}\">{title}</a></li>'
+        html_content += '</ol>'
+        
+        resp = requests.post('https://www.pushplus.plus/send', json={
+            'token': token,
+            'title': '章鱼AI',
+            'content': html_content,
+            'template': 'html'
+        })
+        print('PushPlus response:', resp.text)
+
+asyncio.run(crawl_hk_finance())
+"
